@@ -1,240 +1,407 @@
 #!/usr/bin/env python3
+# ^ Tells the OS to run this file using Python 3
+
 """
 =========================================================================
 By: WSUITS6 
 Network IDS Terminal Monitor
 A comprehensive network monitoring tool for cybersecurity professionals
+=========================================================================
 """
 
+# ===================== IMPORT REQUIRED LIBRARIES ======================
 
-#importing necessary libraries
-#=========================================================================
-import psutil
-import socket
-import requests
-import time
-from datetime import datetime
-from collections import defaultdict
-from colorama import init, Fore, Back, Style
-import os
-import platform
-
+import psutil              # Used to gather system and network information
+import socket              # Used for hostname and network-related operations
+import requests            # Used to make HTTP requests (IP geolocation API)
+import time                # Used for delays and sleep timers
+from datetime import datetime  # Used to display timestamps
+from collections import defaultdict  # Dictionary with default values
+from colorama import init, Fore, Back, Style  # Colored terminal output
+import os                  # Used for system-level operations
+import platform            # Used to detect operating system type
 
 
+# ===================== INITIALIZE COLORAMA ============================
 
-# Initialize colorama
-#=======================================================================
-init(autoreset=True)
+init(autoreset=True)  
+# autoreset=True ensures colors reset automatically after each print
 
 
-#NetworkIDS Class Innitialization
-#=====================================================
+# ===================== NETWORK IDS CLASS ==============================
+
 class NetworkIDS:
     def __init__(self):
-        #ip_cache => is a Dictionary to automatically store GEO location of IPs
+        # Dictionary to cache IP geolocation results
+        # Prevents repeated API calls for the same IP
         self.ip_cache = {}
-        #track statisitic for connection
-        self.connection_stats = defaultdict(int)
-        
 
-    #clear terminal screen
+        # Dictionary to track connection statistics
+        self.connection_stats = defaultdict(int)
+
+    # ===================== CLEAR TERMINAL SCREEN =======================
+
     def clear_screen(self):
-        """Detect OS and Clear terminal screen"""
-        #command
+        """Detect OS and clear the terminal screen"""
+        # Use 'cls' for Windows, 'clear' for Linux/macOS
         os.system('cls' if platform.system() == 'Windows' else 'clear')
 
+    # ===================== IP GEOLOCATION LOOKUP =======================
 
-
-    #getting IP info
-    # (1) Check if the Ip is in ip_cache to prevent Bogus API calls
-    # Identify Public and Private Ips 
     def get_ip_info(self, ip):
-        """Get geolocation info for an IP address"""
+        """Get geolocation information for an IP address"""
+
+        # If IP info is already cached, return it
         if ip in self.ip_cache:
             return self.ip_cache[ip]
-        
-        # Skip local/private IPs
+
+        # Detect local/private IP addresses
         if ip.startswith(('127.', '192.168.', '10.', '172.')) or ip == '::1':
-            info = {'country': 'Local', 'city': 'N/A', 'org': 'Private Network'}
+            info = {
+                'country': 'Local',
+                'city': 'N/A',
+                'org': 'Private Network'
+            }
+            # Store result in cache
             self.ip_cache[ip] = info
             return info
-        
-        #Check Public IPs GEO location Using API
+
+        # Query public IP geolocation API
         try:
-            response = requests.get(f'http://ip-api.com/json/{ip}', timeout=2)
+            response = requests.get(
+                f'http://ip-api.com/json/{ip}',
+                timeout=2  # Prevent long waits
+            )
+
+            # If request is successful
             if response.status_code == 200:
                 data = response.json()
-                #INFO Structure
+
+                # Extract relevant data fields
                 info = {
                     'country': data.get('country', 'Unknown'),
                     'city': data.get('city', 'Unknown'),
                     'org': data.get('org', 'Unknown'),
                     'isp': data.get('isp', 'Unknown')
                 }
+
+                # Cache the IP info
                 self.ip_cache[ip] = info
                 return info
+
         except:
+            # Ignore any API/network errors
             pass
-        
-        info = {'country': 'Unknown', 'city': 'Unknown', 'org': 'Unknown'}
+
+        # Fallback if lookup fails
+        info = {
+            'country': 'Unknown',
+            'city': 'Unknown',
+            'org': 'Unknown'
+        }
+
+        # Cache unknown result
         self.ip_cache[ip] = info
         return info
-    
+
+    # ===================== SERVICE NAME BY PORT ========================
+
     def get_service_name(self, port):
-        """Get common service name for a port"""
+        """Return common service name for a given port"""
+
+        # Dictionary of common port-to-service mappings
         services = {
-            20: 'FTP-DATA', 21: 'FTP', 22: 'SSH', 23: 'TELNET',
-            25: 'SMTP', 53: 'DNS', 80: 'HTTP', 110: 'POP3',
-            143: 'IMAP', 443: 'HTTPS', 445: 'SMB', 3306: 'MySQL',
-            3389: 'RDP', 5432: 'PostgreSQL', 5900: 'VNC', 8080: 'HTTP-ALT',
-            27017: 'MongoDB', 6379: 'Redis'
+            20: 'FTP-DATA',
+            21: 'FTP',
+            22: 'SSH',
+            23: 'TELNET',
+            25: 'SMTP',
+            53: 'DNS',
+            80: 'HTTP',
+            110: 'POP3',
+            143: 'IMAP',
+            443: 'HTTPS',
+            445: 'SMB',
+            3306: 'MySQL',
+            3389: 'RDP',
+            5432: 'PostgreSQL',
+            5900: 'VNC',
+            8080: 'HTTP-ALT',
+            27017: 'MongoDB',
+            6379: 'Redis'
         }
+
+        # Return service name or UNKNOWN if not found
         return services.get(port, 'UNKNOWN')
-    
+
+    # ===================== GET NETWORK CONNECTIONS =====================
+
     def get_connections(self):
-        """Get all network connections"""
-        connections = []
+        """Retrieve all active network connections"""
+
+        connections = []  # Store valid connections here
+
         try:
+            # Iterate through all internet connections
             for conn in psutil.net_connections(kind='inet'):
-                if conn.status == 'ESTABLISHED' or conn.status == 'LISTEN':
+                # Only keep LISTEN or ESTABLISHED connections
+                if conn.status in ('ESTABLISHED', 'LISTEN'):
                     connections.append(conn)
+
         except (psutil.AccessDenied, PermissionError):
-            print(f"{Fore.RED}[!] Permission denied. Run with sudo/admin privileges{Style.RESET_ALL}")
+            # Display permission error message
+            print(
+                f"{Fore.RED}[!] Permission denied. "
+                f"Run with sudo/admin privileges{Style.RESET_ALL}"
+            )
+
         return connections
-    
+
+    # ===================== GET PROCESS NAME ============================
+
     def get_process_name(self, pid):
-        """Get process name from PID"""
+        """Return process name given a PID"""
+
         try:
             if pid:
                 process = psutil.Process(pid)
                 return process.name()
         except:
             pass
+
         return "Unknown"
-    
+
+    # ===================== HEADER DISPLAY ==============================
+
     def print_header(self):
-        """Print fancy header"""
+        """Print IDS header banner"""
+
         print(f"\n{Back.BLUE}{Fore.WHITE}{'='*100}{Style.RESET_ALL}")
         print(f"{Back.BLUE}{Fore.WHITE}{' '*35}NETWORK IDS MONITOR{' '*46}{Style.RESET_ALL}")
         print(f"{Back.BLUE}{Fore.WHITE}{'='*100}{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}{Style.RESET_ALL}")
+
+        # Print current timestamp
+        print(
+            f"{Fore.CYAN}Timestamp: "
+            f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}{Style.RESET_ALL}"
+        )
+
+        # Print hostname
         print(f"{Fore.CYAN}Host: {socket.gethostname()}{Style.RESET_ALL}\n")
-    
+
+    # ===================== ACTIVE CONNECTIONS ==========================
+
     def display_active_connections(self):
-        """Display active network connections"""
+        """Display active established network connections"""
+
         print(f"\n{Back.GREEN}{Fore.BLACK} ACTIVE CONNECTIONS {Style.RESET_ALL}")
         print(f"{Fore.YELLOW}{'='*100}{Style.RESET_ALL}")
-        
+
         connections = self.get_connections()
+
+        # Filter only ESTABLISHED connections
         active_conns = [c for c in connections if c.status == 'ESTABLISHED']
-        
+
         if not active_conns:
             print(f"{Fore.YELLOW}No active connections found{Style.RESET_ALL}")
             return
-        
+
+        # Table headers
         print(f"{Fore.WHITE}{'-'*100}{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}{'Local Address':<25} {'Remote Address':<25} {'Status':<15} {'PID':<8} {'Process':<20}{Style.RESET_ALL}")
+        print(
+            f"{Fore.CYAN}"
+            f"{'Local Address':<25} "
+            f"{'Remote Address':<25} "
+            f"{'Status':<15} "
+            f"{'PID':<8} "
+            f"{'Process':<20}"
+            f"{Style.RESET_ALL}"
+        )
         print(f"{Fore.WHITE}{'-'*100}{Style.RESET_ALL}")
-        
-        for conn in active_conns[:15]:  # Limit to 15 for readability
+
+        # Display only first 15 connections
+        for conn in active_conns[:15]:
             local = f"{conn.laddr.ip}:{conn.laddr.port}" if conn.laddr else "N/A"
             remote = f"{conn.raddr.ip}:{conn.raddr.port}" if conn.raddr else "N/A"
             process = self.get_process_name(conn.pid)
-            
-            print(f"{Fore.GREEN}{local:<25} {Fore.MAGENTA}{remote:<25} {Fore.YELLOW}{conn.status:<15} {Fore.CYAN}{str(conn.pid):<8} {Fore.WHITE}{process:<20}{Style.RESET_ALL}")
-    
+
+            print(
+                f"{Fore.GREEN}{local:<25} "
+                f"{Fore.MAGENTA}{remote:<25} "
+                f"{Fore.YELLOW}{conn.status:<15} "
+                f"{Fore.CYAN}{str(conn.pid):<8} "
+                f"{Fore.WHITE}{process:<20}"
+                f"{Style.RESET_ALL}"
+            )
+
+    # ===================== INCOMING CONNECTIONS ========================
+
     def display_incoming_connections(self):
-        """Display incoming connections with geolocation"""
+        """Display incoming remote IP connections with geolocation"""
+
         print(f"\n{Back.RED}{Fore.WHITE} INCOMING CONNECTIONS (Remote IPs) {Style.RESET_ALL}")
         print(f"{Fore.YELLOW}{'='*100}{Style.RESET_ALL}")
-        
+
         connections = self.get_connections()
-        active_conns = [c for c in connections if c.status == 'ESTABLISHED' and c.raddr]
-        
+
+        # Filter established connections with remote addresses
+        active_conns = [
+            c for c in connections
+            if c.status == 'ESTABLISHED' and c.raddr
+        ]
+
         if not active_conns:
             print(f"{Fore.YELLOW}No incoming connections detected{Style.RESET_ALL}")
             return
-        
+
+        # Table header
         print(f"{Fore.WHITE}{'-'*100}{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}{'Remote IP':<18} {'Port':<8} {'Country':<20} {'City':<20} {'Organization':<30}{Style.RESET_ALL}")
+        print(
+            f"{Fore.CYAN}"
+            f"{'Remote IP':<18} "
+            f"{'Port':<8} "
+            f"{'Country':<20} "
+            f"{'City':<20} "
+            f"{'Organization':<30}"
+            f"{Style.RESET_ALL}"
+        )
         print(f"{Fore.WHITE}{'-'*100}{Style.RESET_ALL}")
-        
-        seen_ips = set()
+
+        seen_ips = set()  # Track unique IPs
+
         for conn in active_conns:
-            if conn.raddr and conn.raddr.ip not in seen_ips:
+            if conn.raddr.ip not in seen_ips:
                 seen_ips.add(conn.raddr.ip)
+
+                # Get geolocation info
                 ip_info = self.get_ip_info(conn.raddr.ip)
-                
-                # Color code based on whether it's local or external
-                ip_color = Fore.GREEN if ip_info['country'] == 'Local' else Fore.RED
-                
-                print(f"{ip_color}{conn.raddr.ip:<18} {Fore.YELLOW}{str(conn.raddr.port):<8} {Fore.CYAN}{ip_info['country']:<20} {Fore.MAGENTA}{ip_info['city']:<20} {Fore.WHITE}{ip_info['org'][:29]:<30}{Style.RESET_ALL}")
-                
-                if len(seen_ips) >= 10:  # Limit display
+
+                # Color local vs external IPs
+                ip_color = (
+                    Fore.GREEN if ip_info['country'] == 'Local'
+                    else Fore.RED
+                )
+
+                print(
+                    f"{ip_color}{conn.raddr.ip:<18} "
+                    f"{Fore.YELLOW}{str(conn.raddr.port):<8} "
+                    f"{Fore.CYAN}{ip_info['country']:<20} "
+                    f"{Fore.MAGENTA}{ip_info['city']:<20} "
+                    f"{Fore.WHITE}{ip_info['org'][:29]:<30}"
+                    f"{Style.RESET_ALL}"
+                )
+
+                # Limit output to 10 IPs
+                if len(seen_ips) >= 10:
                     break
-    
+
+    # ===================== LISTENING SERVICES ==========================
+
     def display_listening_services(self):
-        """Display services listening on ports"""
+        """Display services listening on local ports"""
+
         print(f"\n{Back.MAGENTA}{Fore.WHITE} LISTENING SERVICES {Style.RESET_ALL}")
         print(f"{Fore.YELLOW}{'='*100}{Style.RESET_ALL}")
-        
+
         connections = self.get_connections()
+
+        # Filter listening connections
         listening = [c for c in connections if c.status == 'LISTEN']
-        
+
         if not listening:
             print(f"{Fore.YELLOW}No listening services found{Style.RESET_ALL}")
             return
-        
+
+        # Table header
         print(f"{Fore.WHITE}{'-'*100}{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}{'Local Address':<20} {'Port':<8} {'Service':<15} {'PID':<8} {'Process':<20} {'State':<12}{Style.RESET_ALL}")
+        print(
+            f"{Fore.CYAN}"
+            f"{'Local Address':<20} "
+            f"{'Port':<8} "
+            f"{'Service':<15} "
+            f"{'PID':<8} "
+            f"{'Process':<20} "
+            f"{'State':<12}"
+            f"{Style.RESET_ALL}"
+        )
         print(f"{Fore.WHITE}{'-'*100}{Style.RESET_ALL}")
-        
-        for conn in listening[:20]:  # Limit to 20
+
+        for conn in listening[:20]:
             if conn.laddr:
                 service = self.get_service_name(conn.laddr.port)
                 process = self.get_process_name(conn.pid)
-                
-                # Color code based on security risk
-                port_color = Fore.RED if conn.laddr.port in [23, 21, 3389] else Fore.GREEN
-                
-                print(f"{Fore.CYAN}{conn.laddr.ip:<20} {port_color}{str(conn.laddr.port):<8} {Fore.YELLOW}{service:<15} {Fore.MAGENTA}{str(conn.pid):<8} {Fore.WHITE}{process:<20} {Fore.GREEN}{'LISTENING':<12}{Style.RESET_ALL}")
-    
+
+                # Highlight risky ports
+                port_color = (
+                    Fore.RED if conn.laddr.port in [23, 21, 3389]
+                    else Fore.GREEN
+                )
+
+                print(
+                    f"{Fore.CYAN}{conn.laddr.ip:<20} "
+                    f"{port_color}{str(conn.laddr.port):<8} "
+                    f"{Fore.YELLOW}{service:<15} "
+                    f"{Fore.MAGENTA}{str(conn.pid):<8} "
+                    f"{Fore.WHITE}{process:<20} "
+                    f"{Fore.GREEN}{'LISTENING':<12}"
+                    f"{Style.RESET_ALL}"
+                )
+
+    # ===================== STATISTICS ================================
+
     def display_statistics(self):
-        """Display connection statistics"""
+        """Display network statistics"""
+
         print(f"\n{Back.CYAN}{Fore.BLACK} CONNECTION STATISTICS {Style.RESET_ALL}")
         print(f"{Fore.YELLOW}{'='*100}{Style.RESET_ALL}")
-        
+
         connections = self.get_connections()
-        
+
         stats = {
             'Total Connections': len(connections),
             'Established': len([c for c in connections if c.status == 'ESTABLISHED']),
             'Listening': len([c for c in connections if c.status == 'LISTEN']),
             'Time Wait': len([c for c in connections if c.status == 'TIME_WAIT']),
         }
-        
+
         for key, value in stats.items():
             print(f"{Fore.WHITE}{key:<25}: {Fore.GREEN}{value}{Style.RESET_ALL}")
-        
-        # Network interface stats
+
+        # Network I/O statistics
         net_io = psutil.net_io_counters()
-        print(f"\n{Fore.WHITE}{'Bytes Sent':<25}: {Fore.CYAN}{self.format_bytes(net_io.bytes_sent)}{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}{'Bytes Received':<25}: {Fore.CYAN}{self.format_bytes(net_io.bytes_recv)}{Style.RESET_ALL}")
-    
+
+        print(
+            f"\n{Fore.WHITE}{'Bytes Sent':<25}: "
+            f"{Fore.CYAN}{self.format_bytes(net_io.bytes_sent)}"
+            f"{Style.RESET_ALL}"
+        )
+        print(
+            f"{Fore.WHITE}{'Bytes Received':<25}: "
+            f"{Fore.CYAN}{self.format_bytes(net_io.bytes_recv)}"
+            f"{Style.RESET_ALL}"
+        )
+
+    # ===================== FORMAT BYTES ===============================
+
     def format_bytes(self, bytes_val):
-        """Format bytes to human readable format"""
+        """Convert bytes into human-readable format"""
+
         for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
             if bytes_val < 1024.0:
                 return f"{bytes_val:.2f} {unit}"
             bytes_val /= 1024.0
+
         return f"{bytes_val:.2f} PB"
-    
+
+    # ===================== MAIN LOOP ================================
+
     def run(self, refresh_interval=5):
-        """Run the IDS monitor"""
+        """Run the IDS monitor loop"""
+
         print(f"{Fore.GREEN}Starting Network IDS Monitor...{Style.RESET_ALL}")
         print(f"{Fore.YELLOW}Press Ctrl+C to exit{Style.RESET_ALL}")
         time.sleep(2)
-        
+
         try:
             while True:
                 self.clear_screen()
@@ -243,15 +410,23 @@ class NetworkIDS:
                 self.display_active_connections()
                 self.display_incoming_connections()
                 self.display_listening_services()
-                
-                print(f"\n{Fore.CYAN}Refreshing in {refresh_interval} seconds... (Ctrl+C to exit){Style.RESET_ALL}")
+
+                print(
+                    f"\n{Fore.CYAN}Refreshing in {refresh_interval} seconds..."
+                    f" (Ctrl+C to exit){Style.RESET_ALL}"
+                )
                 time.sleep(refresh_interval)
-                
+
         except KeyboardInterrupt:
             print(f"\n\n{Fore.GREEN}[+] IDS Monitor stopped by user{Style.RESET_ALL}")
             print(f"{Fore.CYAN}Thank you for using Network IDS Monitor!{Style.RESET_ALL}\n")
 
+
+# ===================== PROGRAM ENTRY POINT ============================
+
 if __name__ == "__main__":
+
+    # ASCII banner
     print(f"{Fore.CYAN}")
     print(r"""
     ███╗   ██╗███████╗████████╗██╗    ██╗ ██████╗ ██████╗ ██╗  ██╗    ██╗██████╗ ███████╗
@@ -262,11 +437,15 @@ if __name__ == "__main__":
     ╚═╝  ╚═══╝╚══════╝   ╚═╝    ╚══╝╚══╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝    ╚═╝╚═════╝ ╚══════╝
     """)
     print(f"{Style.RESET_ALL}")
+
+    # Program description
     print(f"{Fore.YELLOW}Network Intrusion Detection System - Terminal Monitor{Style.RESET_ALL}")
     print(f"{Fore.CYAN}For Cybersecurity Professionals{Style.RESET_ALL}\n")
-    
+
+    # Create IDS object
     ids = NetworkIDS()
+
+    # Start monitoring
     ids.run(refresh_interval=5)
 
-
-    #THis si an Awesome tool for anyone who wants to just be patanoid for no reason
+    # This is an awesome tool for anyone who wants to be paranoid for no reason 😄
